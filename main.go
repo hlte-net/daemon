@@ -42,7 +42,12 @@ var formatHandlers = map[string]formatHandlerFunc{
 		csvWriter := csv.NewWriter(csvFile)
 
 		for w := range csvChannel {
-			csvWriter.Write([]string{w.Checksum, w.Payload.URI, w.Payload.Data})
+			csvWriter.Write([]string{
+				w.Input.Checksum,
+				w.Input.Payload.URI,
+				w.Input.Payload.Data,
+				fmt.Sprintf("%d", w.Timestamp),
+			})
 			csvWriter.Flush()
 		}
 	},
@@ -143,7 +148,7 @@ func main() {
 		}
 
 		if len(bodyBytes) > 0 {
-			var bodyObj inputType
+			var bodyObj ingestType
 
 			if err := json.Unmarshal(bodyBytes, &bodyObj); err != nil {
 				log.Printf("main json parse failed\n%v", err)
@@ -151,7 +156,7 @@ func main() {
 				return
 			}
 
-			writeChan <- bodyObj
+			writeChan <- inputType{bodyObj, time.Now().UnixNano()}
 			w.WriteHeader(http.StatusOK)
 		}
 	})
@@ -163,10 +168,10 @@ func main() {
 	go func() {
 		for toWrite := range writeChan {
 			writersLock.Lock()
-			log.Printf("have toWrite! Formats: %v", toWrite.Formats)
-			for _, formatName := range toWrite.Formats {
+			for _, formatName := range toWrite.Input.Formats {
 				if writerChan, ok := writers[formatName]; ok {
 					writerChan <- toWrite
+					log.Printf("post %v sent to %v writer", toWrite.Input.Checksum, formatName)
 				} else {
 					log.Printf("WARN: attempt to use invalid format '%s'", formatName)
 				}

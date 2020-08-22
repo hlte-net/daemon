@@ -5,10 +5,15 @@ type payloadType struct {
 	URI  string
 }
 
-type inputType struct {
+type ingestType struct {
 	Checksum string
 	Payload  payloadType
 	Formats  []string
+}
+
+type inputType struct {
+	Input     ingestType
+	Timestamp int64
 }
 
 type writeFormat struct {
