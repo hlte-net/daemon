@@ -14,37 +14,9 @@ import (
 	"time"
 )
 
-const defaultListenHost = "localhost"
-const defaultListenPort = 56555
-const version = "20200818"
-const dataPathEnvVarName = "HLTE_DAEMON_DATA_PATH"
-
-type payloadType struct {
-	Data string
-	URI  string
-}
-
-type inputType struct {
-	Checksum string
-	Payload  payloadType
-}
-
-type writeFormat struct {
-	name  string
-	write chan inputType
-}
-
-type writeFormatMutate struct {
-	format  writeFormat
-	enabled bool
-}
-
-type formatHandlerFunc func(chan inputType, string)
-
 var writeChan = make(chan inputType)
 var formatChan = make(chan writeFormatMutate)
 
-var validFormats = []string{"json", "csv"} //TODO configurable!
 var formatHandlers = map[string]formatHandlerFunc{
 	"json": func(jsonChannel chan inputType, localDataPath string) {
 		for w := range jsonChannel {
@@ -76,13 +48,23 @@ var formatHandlers = map[string]formatHandlerFunc{
 	},
 }
 
+func validFormats() []string {
+	retVal := make([]string, 0, len(formatHandlers))
+
+	for formatKey := range formatHandlers {
+		retVal = append(retVal, formatKey)
+	}
+
+	return retVal
+}
+
 func formatReqHandler(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-type", "text/json")
 
 	if req.Method == "GET" {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, fmt.Sprintf("[%s]", strings.Join(validFormats, ",")))
+		fmt.Fprintf(w, fmt.Sprintf("[%s]", strings.Join(validFormats(), ",")))
 		return
 	}
 
@@ -100,13 +82,12 @@ func formatReqHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	listenPort := flag.Uint("port", defaultListenPort, "http listen port")
-	listenHost := flag.String("listen", defaultListenHost, "http listen host")
-
+	configPath := flag.String("config", defaultConfigPath, "config file path")
 	flag.Parse()
 
-	if listenHost == nil || listenPort == nil || *listenPort < 1024 || *listenPort > 65535 {
-		log.Panic("listen spec")
+	var config Config
+	if err := ParseJSON(*configPath, &config); err != nil {
+		log.Panicf("failed to parse '%s': %v", *configPath, err)
 	}
 
 	ldPath, err := LocalDataPath(dataPathEnvVarName)
@@ -127,18 +108,12 @@ func main() {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, version)
+		fmt.Fprintf(w, config.Version)
 	})
 
-	for _, validFormat := range validFormats {
-		http.HandleFunc(fmt.Sprintf("/format/%s", validFormat), formatReqHandler)
-	}
-
-	//TODO this should only return what's currently enabled (for options page)
-	//TODO need to actually persist these settings!
-	http.HandleFunc("/format", func(w http.ResponseWriter, req *http.Request) {
+	http.HandleFunc("/formats", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == "GET" {
-			jsonBytes, err := json.Marshal(validFormats)
+			jsonBytes, err := json.Marshal(validFormats())
 
 			if err != nil {
 				log.Panic("validFormats to json")
@@ -188,14 +163,22 @@ func main() {
 	go func() {
 		for toWrite := range writeChan {
 			writersLock.Lock()
-			for _, writerChan := range writers {
-				writerChan <- toWrite
+			log.Printf("have toWrite! Formats: %v", toWrite.Formats)
+			for _, formatName := range toWrite.Formats {
+				if writerChan, ok := writers[formatName]; ok {
+					writerChan <- toWrite
+				} else {
+					log.Printf("WARN: attempt to use invalid format '%s'", formatName)
+				}
 			}
 			writersLock.Unlock()
 		}
 	}()
 
-	// format mutator
+	// format mutator -- has ability to dynamically enable/disable formats, but this
+	// functionality isn't current used after the choice was made to avoid persisting any
+	// type of format configuration here and defer that entirely to the extension's settings
+	// (and therefore just now have the extension pass the formats to be used with each post)
 	go func() {
 		for formatMutate := range formatChan {
 			writersLock.Lock()
@@ -215,7 +198,14 @@ func main() {
 		}
 	}()
 
-	listenSpec := fmt.Sprintf("%s:%d", *listenHost, *listenPort)
+	// enable all validFormats()
+	for _, formatName := range validFormats() {
+		newWriteChan := make(chan inputType)
+		formatChan <- writeFormatMutate{writeFormat{formatName, newWriteChan}, true}
+		log.Printf("format '%s' available", formatName)
+	}
+
+	listenSpec := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	log.Printf("listening on %s\n", listenSpec)
 	http.ListenAndServe(listenSpec, nil)
 }
