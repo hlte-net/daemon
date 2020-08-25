@@ -47,10 +47,10 @@ func main() {
 		authed := false
 
 		if reqPP, ok := req.Header[http.CanonicalHeaderKey("x-hlte-pp")]; ok {
-			authed = len(reqPP) == 1 && reqPP[0] == config.Passphrase
+			authed = len(reqPP) == 1 && reqPP[0] == config.PassphraseSha512
 		}
 
-		if !authed && config.Passphrase != "" {
+		if !authed && config.PassphraseSha512 != "" {
 			log.Printf("WARN: %s attempted unauthorized call to '%s' (headers: %v)",
 				req.RemoteAddr, req.RequestURI, req.Header)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -68,7 +68,7 @@ func main() {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, config.Version)
+		fmt.Fprintf(w, version)
 	})
 
 	http.HandleFunc("/formats", func(w http.ResponseWriter, req *http.Request) {
@@ -133,7 +133,7 @@ func main() {
 		log.Printf("format '%s' available", formatName)
 	}
 
-	if config.Passphrase != "" {
+	if config.PassphraseSha512 != "" {
 		log.Printf("passphrase is set")
 	}
 
