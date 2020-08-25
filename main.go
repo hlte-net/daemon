@@ -53,7 +53,7 @@ func main() {
 		if !authed && config.PassphraseSha512 != "" {
 			log.Printf("WARN: %s attempted unauthorized call to '%s' (headers: %v)",
 				req.RemoteAddr, req.RequestURI, req.Header)
-			w.WriteHeader(http.StatusUnauthorized)
+			w.WriteHeader(http.StatusForbidden)
 			return false
 		}
 
