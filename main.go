@@ -14,18 +14,25 @@ var writeChan = make(chan inputType)
 var formatChan = make(chan writeFormatMutate)
 
 func main() {
+	var err error
+	var config Config
+	var ldPath string
+
 	configPath := flag.String("config", defaultConfigPath, "config file path")
 	flag.Parse()
 
-	var config Config
 	if err := ParseJSON(*configPath, &config); err != nil {
 		log.Panicf("failed to parse '%s': %v", *configPath, err)
 	}
 
-	ldPath, err := LocalDataPath(dataPathEnvVarName)
+	if config.LocalDataPath != "" {
+		ldPath = config.LocalDataPath
+	} else {
+		ldPath, err = LocalDataPath(dataPathEnvVarName)
 
-	if err != nil {
-		log.Panicf("local data path %v", err)
+		if err != nil {
+			log.Panicf("local data path %v", err)
+		}
 	}
 
 	localDataPath, err := InitLocalData(ldPath)
@@ -36,7 +43,28 @@ func main() {
 
 	log.Printf("using local data path '%s'", localDataPath)
 
+	authCheck := func(w http.ResponseWriter, req *http.Request) bool {
+		authed := false
+
+		if reqPP, ok := req.Header[http.CanonicalHeaderKey("x-hlte-pp")]; ok {
+			authed = len(reqPP) == 1 && reqPP[0] == config.Passphrase
+		}
+
+		if !authed && config.Passphrase != "" {
+			log.Printf("WARN: %s attempted unauthorized call to '%s' (headers: %v)",
+				req.RemoteAddr, req.RequestURI, req.Header)
+			w.WriteHeader(http.StatusUnauthorized)
+			return false
+		}
+
+		return true
+	}
+
 	http.HandleFunc("/version", func(w http.ResponseWriter, req *http.Request) {
+		if !authCheck(w, req) {
+			return
+		}
+
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-type", "text/plain")
 		w.WriteHeader(http.StatusOK)
@@ -44,6 +72,10 @@ func main() {
 	})
 
 	http.HandleFunc("/formats", func(w http.ResponseWriter, req *http.Request) {
+		if !authCheck(w, req) {
+			return
+		}
+
 		if req.Method == "GET" {
 			jsonBytes, err := json.Marshal(validFormats())
 
@@ -60,13 +92,16 @@ func main() {
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		if !authCheck(w, req) {
+			return
+		}
+
 		if req.Method != "POST" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 
 		var bodyBytes []byte
-		var err error
 
 		if bodyBytes, err = ioutil.ReadAll(req.Body); err != nil {
 			log.Printf("main body read failed\n%v", err)
@@ -98,7 +133,11 @@ func main() {
 		log.Printf("format '%s' available", formatName)
 	}
 
+	if config.Passphrase != "" {
+		log.Printf("passphrase is set")
+	}
+
 	listenSpec := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	log.Printf("listening on %s\n", listenSpec)
+	log.Printf("listening on %s", listenSpec)
 	http.ListenAndServe(listenSpec, nil)
 }

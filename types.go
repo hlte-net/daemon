@@ -29,7 +29,9 @@ type writeFormatMutate struct {
 type formatHandlerFunc func(chan inputType, string)
 
 type Config struct {
-	Host    string
-	Port    int
-	Version string
+	Host          string
+	Port          int
+	Version       string
+	Passphrase    string
+	LocalDataPath string
 }
