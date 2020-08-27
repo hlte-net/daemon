@@ -36,14 +36,18 @@ func LocalDataPath(checkEnvVar string) (string, error) {
 
 // InitLocalData will prepare the directory at `path` for use as a local user data store
 func InitLocalData(path string) (string, error) {
-	userHomeDir, err := os.UserHomeDir()
+	if path == "" {
+		userHomeDir, err := os.UserHomeDir()
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "user homedir lookup failed: %v\n", err)
-		return "", err
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "user homedir lookup failed: %v\n", err)
+			return "", err
+		}
+
+		path = userHomeDir
 	}
 
-	absPath, err := filepath.Abs(fmt.Sprintf("%s/%s/%s", userHomeDir, path, AppName))
+	absPath, err := filepath.Abs(fmt.Sprintf("%s/%s", path, AppName))
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "initLocalData failed: %v\n", err)
