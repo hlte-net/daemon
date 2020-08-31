@@ -1,9 +1,10 @@
 package main
 
 type payloadType struct {
-	Data       string
-	URI        string
-	Annotation string
+	Data         string
+	URI          string
+	Annotation   string
+	SecondaryURI string
 }
 
 type ingestType struct {

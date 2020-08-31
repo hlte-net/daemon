@@ -14,6 +14,8 @@ var writeChan = make(chan inputType)
 var formatChan = make(chan writeFormatMutate)
 
 func main() {
+	log.Printf("version %s", version)
+	
 	var err error
 	var config Config
 	var ldPath string

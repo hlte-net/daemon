@@ -44,6 +44,7 @@ var formatHandlers = map[string]formatHandlerFunc{
 				w.Input.Payload.Data,
 				fmt.Sprintf("%d", w.Timestamp),
 				w.Input.Payload.Annotation,
+				w.Input.Payload.SecondaryURI,
 			})
 			csvWriter.Flush()
 		}
