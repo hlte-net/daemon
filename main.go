@@ -15,7 +15,7 @@ var formatChan = make(chan writeFormatMutate)
 
 func main() {
 	log.Printf("version %s", version)
-	
+
 	var err error
 	var config Config
 	var ldPath string
@@ -47,12 +47,15 @@ func main() {
 
 	authCheck := func(w http.ResponseWriter, req *http.Request) bool {
 		authed := false
+		reqPP, ppHeaderFound := req.Header[http.CanonicalHeaderKey("x-hlte-pp")]
 
-		if reqPP, ok := req.Header[http.CanonicalHeaderKey("x-hlte-pp")]; ok {
-			authed = len(reqPP) == 1 && reqPP[0] == config.PassphraseSha512
+		if len(config.PassphraseSha512) > 0 {
+			authed = ppHeaderFound && len(reqPP) == 1 && reqPP[0] == config.PassphraseSha512
+		} else {
+			authed = !ppHeaderFound
 		}
 
-		if !authed && config.PassphraseSha512 != "" {
+		if !authed {
 			log.Printf("WARN: %s attempted unauthorized call to '%s' (headers: %v)",
 				req.RemoteAddr, req.RequestURI, req.Header)
 			w.WriteHeader(http.StatusForbidden)
