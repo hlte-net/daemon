@@ -45,9 +45,16 @@ func main() {
 
 	log.Printf("using local data path '%s'", localDataPath)
 
+	hdrs := func(w http.ResponseWriter) {
+		w.Header().Set("Access-Control-Allow-Headers", ppHeader)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+
 	authCheck := func(w http.ResponseWriter, req *http.Request) bool {
+		hdrs(w)
+
 		authed := false
-		reqPP, ppHeaderFound := req.Header[http.CanonicalHeaderKey("x-hlte-pp")]
+		reqPP, ppHeaderFound := req.Header[ppHeader]
 
 		if len(config.PassphraseSha512) > 0 {
 			authed = ppHeaderFound && len(reqPP) == 1 && reqPP[0] == config.PassphraseSha512
@@ -70,7 +77,6 @@ func main() {
 			return
 		}
 
-		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, version)
