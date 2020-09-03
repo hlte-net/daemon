@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -8,11 +9,14 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var writers map[string]chan inputType = map[string]chan inputType{}
 var writersLock sync.Mutex
 
+// handlers are executed before any requests are accepted from clients
 var formatHandlers = map[string]formatHandlerFunc{
 	"json": func(jsonChannel chan inputType, localDataPath string) {
 		for w := range jsonChannel {
@@ -38,6 +42,7 @@ var formatHandlers = map[string]formatHandlerFunc{
 		csvWriter := csv.NewWriter(csvFile)
 
 		for w := range csvChannel {
+			//TODO: arrange these like in same order as sqlite below
 			csvWriter.Write([]string{
 				w.Input.Checksum,
 				w.Input.Payload.URI,
@@ -47,6 +52,53 @@ var formatHandlers = map[string]formatHandlerFunc{
 				w.Input.Payload.SecondaryURI,
 			})
 			csvWriter.Flush()
+		}
+	},
+	"sqlite": func(channel chan inputType, localDataPath string) {
+		dbName := fmt.Sprintf("%s/data.sqlite3", localDataPath)
+
+		_, err := os.Stat(dbName)
+		newDb := os.IsNotExist(err)
+
+		db, err := sql.Open("sqlite3", dbName)
+
+		if err != nil {
+			log.Fatalf("sqlite handler: %v", err)
+		}
+
+		defer db.Close()
+
+		if newDb {
+			log.Printf("initializing %s", dbName)
+
+			createStmnt := `create table hlte (
+				checksum text not null,
+				timestamp integer not null,
+				primaryURI text not null,
+				secondaryURI text,
+				hilite text,
+				annotation text
+				);
+				delete from hlte;`
+
+			if _, err = db.Exec(createStmnt); err != nil {
+				log.Fatalf("sqlite init failed: %v", err)
+			}
+		}
+
+		for w := range channel {
+			_, err := db.Exec("insert into hlte values(?, ?, ?, ?, ?, ?)",
+				w.Input.Checksum,
+				w.Timestamp,
+				w.Input.Payload.URI,
+				w.Input.Payload.SecondaryURI,
+				w.Input.Payload.Data,
+				w.Input.Payload.Annotation,
+			)
+
+			if err != nil {
+				log.Printf("ERROR: failed to write %s to sqlite!", w.Input.Checksum)
+			}
 		}
 	},
 }
