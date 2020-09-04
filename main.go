@@ -50,8 +50,12 @@ func main() {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 
-	authCheck := func(w http.ResponseWriter, req *http.Request) bool {
+	authCheck := func(w http.ResponseWriter, req *http.Request) (bool, error) {
 		hdrs(w)
+
+		if req.Method == "OPTIONS" {
+			return true, fmt.Errorf("not-an-error")
+		}
 
 		authed := false
 		reqPP, ppHeaderFound := req.Header[ppHeader]
@@ -63,17 +67,17 @@ func main() {
 		}
 
 		if !authed {
-			log.Printf("WARN: %s attempted unauthorized call to '%s' (headers: %v)",
-				req.RemoteAddr, req.RequestURI, req.Header)
+			log.Printf("WARN: %s attempted unauthorized call to '%s' %s (headers: %v)",
+				req.RemoteAddr, req.RequestURI, req.Method, req.Header)
 			w.WriteHeader(http.StatusForbidden)
-			return false
+			return false, nil
 		}
 
-		return true
+		return true, nil
 	}
 
 	http.HandleFunc("/version", func(w http.ResponseWriter, req *http.Request) {
-		if !authCheck(w, req) {
+		if authed, err := authCheck(w, req); !authed || err != nil {
 			return
 		}
 
@@ -83,7 +87,7 @@ func main() {
 	})
 
 	http.HandleFunc("/formats", func(w http.ResponseWriter, req *http.Request) {
-		if !authCheck(w, req) {
+		if authed, err := authCheck(w, req); !authed || err != nil {
 			return
 		}
 
@@ -103,7 +107,7 @@ func main() {
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		if !authCheck(w, req) {
+		if authed, err := authCheck(w, req); !authed || err != nil {
 			return
 		}
 
