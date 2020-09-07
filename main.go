@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -130,6 +132,28 @@ func main() {
 			if err := json.Unmarshal(bodyBytes, &bodyObj); err != nil {
 				log.Printf("main json parse failed\n%v", err)
 				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			// recompute checksum and verify
+			var payloadStr []byte
+			if payloadStr, err = json.Marshal(bodyObj.Payload); err != nil {
+				log.Printf("json validation marshal failed\n%v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			payloadHash := sha256.Sum256(payloadStr)
+			payloadDigest := hex.EncodeToString(payloadHash[:])
+
+			// client always tries to provide checksum but sometimes is unable (some sites reset
+			// crypto.subtle), so if it is empty do not verify, just set
+			if len(bodyObj.Checksum) == 0 {
+				bodyObj.Checksum = payloadDigest
+				log.Printf("warn: payload rx'ed w/o checksum:\n%v", string(bodyBytes))
+			} else if payloadDigest != bodyObj.Checksum {
+				log.Printf("json validation verify failed\n%v vs %v", payloadDigest, bodyObj.Checksum)
+				w.WriteHeader(http.StatusForbidden)
 				return
 			}
 

@@ -1,10 +1,10 @@
 package main
 
 type payloadType struct {
-	Data         string
-	URI          string
-	Annotation   string
-	SecondaryURI string
+	Data         string `json:"data"`
+	URI          string `json:"uri"`
+	Annotation   string `json:"annotation",omitempty`
+	SecondaryURI string `json:"secondaryURI",omitempty`
 }
 
 type ingestType struct {
