@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"html"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -118,6 +120,20 @@ func main() {
 			return
 		}
 
+		var bodyObj ingestType
+
+		if fmtsArr, ok := req.URL.Query()["formats"]; ok {
+			bodyObj.Formats = strings.Split(fmtsArr[0], ",")
+		} else {
+			log.Printf("POST w/o formats")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if csArr, ok := req.URL.Query()["checksum"]; ok {
+			bodyObj.Checksum = html.UnescapeString(csArr[0])
+		}
+
 		var bodyBytes []byte
 
 		if bodyBytes, err = ioutil.ReadAll(req.Body); err != nil {
@@ -127,23 +143,7 @@ func main() {
 		}
 
 		if len(bodyBytes) > 0 {
-			var bodyObj ingestType
-
-			if err := json.Unmarshal(bodyBytes, &bodyObj); err != nil {
-				log.Printf("main json parse failed\n%v", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			// recompute checksum and verify
-			var payloadStr []byte
-			if payloadStr, err = json.Marshal(bodyObj.Payload); err != nil {
-				log.Printf("json validation marshal failed\n%v", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			payloadHash := sha256.Sum256(payloadStr)
+			payloadHash := sha256.Sum256(bodyBytes)
 			payloadDigest := hex.EncodeToString(payloadHash[:])
 
 			// client always tries to provide checksum but sometimes is unable (some sites reset
@@ -153,7 +153,14 @@ func main() {
 				log.Printf("warn: payload rx'ed w/o checksum:\n%v", string(bodyBytes))
 			} else if payloadDigest != bodyObj.Checksum {
 				log.Printf("json validation verify failed\n%v vs %v", payloadDigest, bodyObj.Checksum)
+				log.Printf("%v", string(bodyBytes))
 				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+
+			if err := json.Unmarshal(bodyBytes, &bodyObj.Payload); err != nil {
+				log.Printf("main json parse failed\n%v", err)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 
