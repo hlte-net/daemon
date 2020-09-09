@@ -27,3 +27,7 @@ done
 
 export GOOS=$OG_OS
 export GOARCH=$OG_ARCH
+
+pushd build
+ls -1 ./ | xargs -I{} shasum -a 256 {}
+popd
