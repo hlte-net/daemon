@@ -50,7 +50,8 @@ func main() {
 	log.Printf("using local data path '%s'", localDataPath)
 
 	hdrs := func(w http.ResponseWriter) {
-		w.Header().Set("Access-Control-Allow-Headers", ppHeader)
+		allowHdrs := []string{ppHeader, "content-type"}
+		w.Header().Set("Access-Control-Allow-Headers", strings.Join(allowHdrs[:], ","))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 
