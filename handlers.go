@@ -16,6 +16,39 @@ import (
 var writers map[string]chan inputType = map[string]chan inputType{}
 var writersLock sync.Mutex
 
+func sqliteDbHandle(localDataPath string) *sql.DB {
+	dbName := fmt.Sprintf("%s/data.sqlite3", localDataPath)
+
+	_, err := os.Stat(dbName)
+	newDb := os.IsNotExist(err)
+
+	db, err := sql.Open("sqlite3", dbName)
+
+	if err != nil {
+		log.Panicf("sqlite handler: %v", err)
+	}
+
+	if newDb {
+		log.Printf("initializing %s", dbName)
+
+		createStmnt := `create table hlte (
+			checksum text not null,
+			timestamp integer not null,
+			primaryURI text not null,
+			secondaryURI text,
+			hilite text,
+			annotation text
+			);
+			delete from hlte;`
+
+		if _, err = db.Exec(createStmnt); err != nil {
+			log.Fatalf("sqlite init failed: %v", err)
+		}
+	}
+
+	return db
+}
+
 // handlers are executed before any requests are accepted from clients
 var formatHandlers = map[string]formatHandlerFunc{
 	"json": func(jsonChannel chan inputType, localDataPath string) {
@@ -55,36 +88,8 @@ var formatHandlers = map[string]formatHandlerFunc{
 		}
 	},
 	"sqlite": func(channel chan inputType, localDataPath string) {
-		dbName := fmt.Sprintf("%s/data.sqlite3", localDataPath)
-
-		_, err := os.Stat(dbName)
-		newDb := os.IsNotExist(err)
-
-		db, err := sql.Open("sqlite3", dbName)
-
-		if err != nil {
-			log.Fatalf("sqlite handler: %v", err)
-		}
-
+		db := sqliteDbHandle(localDataPath)
 		defer db.Close()
-
-		if newDb {
-			log.Printf("initializing %s", dbName)
-
-			createStmnt := `create table hlte (
-				checksum text not null,
-				timestamp integer not null,
-				primaryURI text not null,
-				secondaryURI text,
-				hilite text,
-				annotation text
-				);
-				delete from hlte;`
-
-			if _, err = db.Exec(createStmnt); err != nil {
-				log.Fatalf("sqlite init failed: %v", err)
-			}
-		}
 
 		for w := range channel {
 			_, err := db.Exec("insert into hlte values(?, ?, ?, ?, ?, ?)",
@@ -103,6 +108,57 @@ var formatHandlers = map[string]formatHandlerFunc{
 	},
 }
 
+var queryHandlers = map[string]formatQueryFunc{
+	"sqlite": func(query string, localDataPath string) (retval []interface{}) {
+		db := sqliteDbHandle(localDataPath)
+		defer db.Close()
+
+		pStmt, err := db.Prepare(`select timestamp, primaryURI, secondaryURI, hilite, annotation 
+			from hlte where hilite like '%' || ? || '%' or annotation like '%' || ? || '%' or 
+			primaryURI like '%' || ? || '%' or secondaryURI like '%' || ? || '%'`)
+
+		if err != nil {
+			log.Printf("prep failed: %s", err)
+			return
+		}
+
+		defer pStmt.Close()
+		rows, err := pStmt.Query(query, query, query, query)
+
+		if err != nil {
+			log.Printf("query failed: %s", err)
+			return
+		}
+
+		defer rows.Close()
+
+		for rows.Next() {
+			var timestamp int64
+			var primaryURI string
+			var secondaryURI string
+			var hilite string
+			var annotation string
+
+			err = rows.Scan(&timestamp, &primaryURI, &secondaryURI, &hilite, &annotation)
+
+			if err != nil {
+				log.Printf("scan failed: %s", err)
+				return
+			}
+
+			retval = append(retval, map[string]string{
+				"timestamp":    fmt.Sprintf("%d", timestamp),
+				"primaryURI":   primaryURI,
+				"secondaryURI": secondaryURI,
+				"hilite":       hilite,
+				"annotation":   annotation,
+			})
+		}
+
+		return
+	},
+}
+
 func validFormats() []string {
 	retVal := make([]string, 0, len(formatHandlers))
 
@@ -111,6 +167,14 @@ func validFormats() []string {
 	}
 
 	return retVal
+}
+
+func queryFormat(format string, localDataPath string, query string) ([]interface{}, error) {
+	if handler, ok := queryHandlers[format]; ok {
+		return handler(query, localDataPath), nil
+	} else {
+		return nil, fmt.Errorf("bad format %s", format)
+	}
 }
 
 func writersHandler(writeChan chan inputType) {

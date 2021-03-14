@@ -30,6 +30,8 @@ type writeFormatMutate struct {
 
 type formatHandlerFunc func(chan inputType, string)
 
+type formatQueryFunc func(query string, localDataPath string) []interface{}
+
 type Config struct {
 	Host             string
 	Port             int

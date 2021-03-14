@@ -91,6 +91,44 @@ func main() {
 		fmt.Fprintf(w, version)
 	})
 
+	http.HandleFunc("/search", func(w http.ResponseWriter, req *http.Request) {
+		if authed, err := authCheck(w, req); !authed || err != nil {
+			return
+		}
+
+		if req.Method == "GET" {
+			if qArr, ok := req.URL.Query()["q"]; ok {
+				qStr := html.UnescapeString(qArr[0])
+				log.Printf("search '%s'\n", qStr)
+
+				rows, err := queryFormat("sqlite", localDataPath, qStr)
+
+				if err != nil {
+					log.Printf("queryFormat('%s') failed: %s\n", qStr, err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+
+				log.Printf("found %d rows\n", len(rows))
+
+				noEscEnc := json.NewEncoder(w)
+				noEscEnc.SetEscapeHTML(false)
+				err = noEscEnc.Encode(rows)
+
+				if err != nil {
+					log.Printf("queryFormat('%s') Marshal failed: %s\n", qStr, err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
+				w.Header().Set("Content-type", "application/json")
+				return
+			}
+		}
+
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
+
 	http.HandleFunc("/formats", func(w http.ResponseWriter, req *http.Request) {
 		if authed, err := authCheck(w, req); !authed || err != nil {
 			return
