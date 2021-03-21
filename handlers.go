@@ -109,13 +109,21 @@ var formatHandlers = map[string]formatHandlerFunc{
 }
 
 var queryHandlers = map[string]formatQueryFunc{
-	"sqlite": func(query string, localDataPath string) (retval []interface{}) {
-		db := sqliteDbHandle(localDataPath)
+	"sqlite": func(querySpec QuerySpec) (retval []interface{}) {
+		db := sqliteDbHandle(querySpec.localDataPath)
 		defer db.Close()
 
-		pStmt, err := db.Prepare(`select timestamp, primaryURI, secondaryURI, hilite, annotation 
-			from hlte where hilite like '%' || ? || '%' or annotation like '%' || ? || '%' or 
-			primaryURI like '%' || ? || '%' or secondaryURI like '%' || ? || '%'`)
+		sortDir := "desc"
+		if !querySpec.newestFirst {
+			sortDir = "asc"
+		}
+
+		pStmt, err := db.Prepare(`select * from hlte
+			where hilite like '%' || ? || '%'
+			or annotation like '%' || ? || '%'
+			or primaryURI like '%' || ? || '%'
+			or secondaryURI like '%' || ? || '%'
+			order by timestamp ` + sortDir + ` limit ?`)
 
 		if err != nil {
 			log.Printf("prep failed: %s", err)
@@ -123,7 +131,7 @@ var queryHandlers = map[string]formatQueryFunc{
 		}
 
 		defer pStmt.Close()
-		rows, err := pStmt.Query(query, query, query, query)
+		rows, err := pStmt.Query(querySpec.query, querySpec.query, querySpec.query, querySpec.query, querySpec.limit)
 
 		if err != nil {
 			log.Printf("query failed: %s", err)
@@ -133,13 +141,14 @@ var queryHandlers = map[string]formatQueryFunc{
 		defer rows.Close()
 
 		for rows.Next() {
+			var checksum string
 			var timestamp int64
 			var primaryURI string
 			var secondaryURI string
 			var hilite string
 			var annotation string
 
-			err = rows.Scan(&timestamp, &primaryURI, &secondaryURI, &hilite, &annotation)
+			err = rows.Scan(&checksum, &timestamp, &primaryURI, &secondaryURI, &hilite, &annotation)
 
 			if err != nil {
 				log.Printf("scan failed: %s", err)
@@ -147,6 +156,7 @@ var queryHandlers = map[string]formatQueryFunc{
 			}
 
 			retval = append(retval, map[string]string{
+				"checksum":     checksum,
 				"timestamp":    fmt.Sprintf("%d", timestamp),
 				"primaryURI":   primaryURI,
 				"secondaryURI": secondaryURI,
@@ -169,9 +179,9 @@ func validFormats() []string {
 	return retVal
 }
 
-func queryFormat(format string, localDataPath string, query string) ([]interface{}, error) {
+func queryFormat(format string, qSpec QuerySpec) ([]interface{}, error) {
 	if handler, ok := queryHandlers[format]; ok {
-		return handler(query, localDataPath), nil
+		return handler(qSpec), nil
 	} else {
 		return nil, fmt.Errorf("bad format %s", format)
 	}

@@ -30,7 +30,14 @@ type writeFormatMutate struct {
 
 type formatHandlerFunc func(chan inputType, string)
 
-type formatQueryFunc func(query string, localDataPath string) []interface{}
+type QuerySpec struct {
+	query         string
+	limit         int
+	newestFirst   bool
+	localDataPath string
+}
+
+type formatQueryFunc func(querySpec QuerySpec) []interface{}
 
 type Config struct {
 	Host             string

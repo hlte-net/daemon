@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -97,11 +98,34 @@ func main() {
 		}
 
 		if req.Method == "GET" {
+			limit := searchDefaultLimit
+			newestFirst := true
 			if qArr, ok := req.URL.Query()["q"]; ok {
-				qStr := html.UnescapeString(qArr[0])
-				log.Printf("search '%s'\n", qStr)
+				if limitArr, ok := req.URL.Query()["l"]; ok {
+					limit, err = strconv.Atoi(limitArr[0])
 
-				rows, err := queryFormat("sqlite", localDataPath, qStr)
+					if err != nil || limit < 1 || limit > searchMaxLimit {
+						log.Printf("limit parse error %s", err)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+				}
+
+				if nfArr, ok := req.URL.Query()["d"]; ok {
+					newestFirst, err = strconv.ParseBool(nfArr[0])
+
+					if err != nil {
+						log.Printf("d parse error %s", err)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+				}
+
+				qStr := html.UnescapeString(qArr[0])
+				qSpec := QuerySpec{qStr, limit, newestFirst, localDataPath}
+				log.Printf("search %v\n", qSpec)
+
+				rows, err := queryFormat("sqlite", qSpec)
 
 				if err != nil {
 					log.Printf("queryFormat('%s') failed: %s\n", qStr, err)
