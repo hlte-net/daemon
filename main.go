@@ -26,10 +26,15 @@ func main() {
 	var ldPath string
 
 	configPath := flag.String("config", defaultConfigPath, "config file path")
+	hashPassword := flag.String("hashPassword", "", "updates the config file with the hashed password (given as the argument) and exits immediately")
 	flag.Parse()
 
 	if err := ParseJSON(*configPath, &config); err != nil {
 		log.Panicf("failed to parse '%s': %v", *configPath, err)
+	}
+
+	if hashPassword != nil && *hashPassword != "" {
+		hashPasswordThenExit(hashPassword, configPath, config)
 	}
 
 	if config.LocalDataPath != "" {
@@ -66,8 +71,17 @@ func main() {
 		authed := false
 		reqPP, ppHeaderFound := req.Header[ppHeader]
 
-		if len(config.PassphraseSha512) > 0 {
-			authed = ppHeaderFound && len(reqPP) == 1 && reqPP[0] == config.PassphraseSha512
+		if len(config.Auth.PassphraseHashHex) > 0 {
+			if ppHeaderFound && len(reqPP) == 1 {
+				hashed, err := hash(reqPP[0], &config.Auth.PassphraseSaltHex)
+
+				if err != nil {
+					log.Printf("ERROR: failed to hash '%s'\n%s '%s' %s (headers: %v)", err,
+						req.RemoteAddr, req.RequestURI, req.Method, req.Header)
+				}
+
+				authed = hashed.PassphraseHashHex == config.Auth.PassphraseHashHex
+			}
 		} else {
 			authed = !ppHeaderFound
 		}
@@ -242,7 +256,7 @@ func main() {
 		log.Printf("format '%s' available", formatName)
 	}
 
-	if config.PassphraseSha512 != "" {
+	if config.Auth.PassphraseHashHex != "" {
 		log.Printf("passphrase is set")
 	}
 

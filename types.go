@@ -39,10 +39,15 @@ type QuerySpec struct {
 
 type formatQueryFunc func(querySpec QuerySpec) []interface{}
 
+type Auth struct {
+	PassphraseHashHex string
+	PassphraseSaltHex string
+}
+
 type Config struct {
-	Host             string
-	Port             int
-	Version          string
-	PassphraseSha512 string
-	LocalDataPath    string
+	Host          string
+	Port          int
+	Version       string
+	Auth          Auth
+	LocalDataPath string
 }
